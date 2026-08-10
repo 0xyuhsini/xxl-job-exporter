@@ -663,10 +663,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, shutdown)
 
     log.info(
-        "xxl-job-exporter %s listening on %s:%d (db=%s@%s:%d/%s, windows=%s, lookback=%ss, cache_ttl=%ss)",
+        "xxl-job-exporter %s listening on %s:%d (db=%s@%s:%d/%s, db_timezone=%s, windows=%s, ...)",
         VERSION, cfg.listen_address, cfg.listen_port,
         cfg.db_user, cfg.db_host, cfg.db_port, cfg.db_name,
-        ",".join(w for w, _ in cfg.windows), cfg.lookback_seconds, cfg.cache_ttl,
+        cfg.db_timezone or "(server default)",
+        ...
     )
     server.serve_forever()
     return 0

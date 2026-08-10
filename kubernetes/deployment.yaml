@@ -48,6 +48,8 @@ spec:
               value: "7d"
             - name: EXPORTER_CACHE_TTL
               value: "15"
+            - name: XXL_JOB_DB_TIMEZONE
+              value: "+08:00"
           volumeMounts:
             - name: db-secret
               mountPath: /etc/xxl-job-exporter
