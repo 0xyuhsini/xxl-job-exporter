@@ -83,6 +83,7 @@ class Config:
 
         self.db_connect_timeout = int(_env("XXL_JOB_DB_CONNECT_TIMEOUT", "5"))
         self.db_read_timeout = int(_env("XXL_JOB_DB_READ_TIMEOUT", "10"))
+        self.db_timezone = _env("XXL_JOB_DB_TIMEZONE", "").strip()
 
         # --- Exporter behaviour ---
         self.listen_address = _env("EXPORTER_LISTEN_ADDRESS", "0.0.0.0")
@@ -149,19 +150,22 @@ class XxlJobCollector:
 
     # -- DB helpers --------------------------------------------------------- #
 
-    def _connect(self):
-        return pymysql.connect(
-            host=self.cfg.db_host,
-            port=self.cfg.db_port,
-            user=self.cfg.db_user,
-            password=self.cfg.db_password,
-            database=self.cfg.db_name,
-            charset="utf8mb4",
-            connect_timeout=self.cfg.db_connect_timeout,
-            read_timeout=self.cfg.db_read_timeout,
-            cursorclass=pymysql.cursors.DictCursor,
-            autocommit=True,
-        )
+        def _connect(self):
+            kwargs = dict(
+                host=self.cfg.db_host,
+                port=self.cfg.db_port,
+                user=self.cfg.db_user,
+                password=self.cfg.db_password,
+                database=self.cfg.db_name,
+                charset="utf8mb4",
+                connect_timeout=self.cfg.db_connect_timeout,
+                read_timeout=self.cfg.db_read_timeout,
+                cursorclass=pymysql.cursors.DictCursor,
+                autocommit=True,
+            )
+            if self.cfg.db_timezone:
+                kwargs["init_command"] = f"SET time_zone = '{self.cfg.db_timezone}'"
+            return pymysql.connect(**kwargs)
 
     @staticmethod
     def _query(conn, sql: str, params=None) -> list:
