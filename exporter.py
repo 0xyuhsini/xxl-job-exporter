@@ -667,7 +667,7 @@ def main() -> int:
         VERSION, cfg.listen_address, cfg.listen_port,
         cfg.db_user, cfg.db_host, cfg.db_port, cfg.db_name,
         cfg.db_timezone or "(server default)", 
-        ",".join(w for w, _ in cfg.windows), cfg.lookback_seconds, cfg_cache_ttl
+        ",".join(w for w, _ in cfg.windows), cfg.lookback_seconds, cfg.cache_ttl
     )
     server.serve_forever()
     return 0
