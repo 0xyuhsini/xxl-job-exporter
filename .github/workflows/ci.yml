@@ -2,21 +2,39 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: ["**"]
+    tags: ["**"]
   pull_request:
     branches: [main]
 
 jobs:
   lint:
-    name: Lint (ruff)
+    name: Lint & Auto Fix (ruff)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install ruff
-      - run: ruff check exporter.py demo/simulator.py
+
+      - name: Install Ruff
+        run: pip install ruff
+
+      - name: Auto Fix and Format
+        run: |
+          ruff check --fix exporter.py demo/simulator.py || true
+          ruff format exporter.py demo/simulator.py || true
+
+      - name: Auto-commit Ruff fixes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "style: automated ruff fixes & formatting"
+          
+      - name: Verify remains
+        run: ruff check exporter.py demo/simulator.py
 
   docker-build:
     name: Docker build
