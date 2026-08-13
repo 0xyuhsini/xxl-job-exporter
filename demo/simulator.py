@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
+import logging
 import os
 import random
 import time
-import logging
 from datetime import datetime, timedelta
 
 import pymysql
@@ -23,19 +23,76 @@ DB = dict(
 )
 
 EXECUTORS = [
-    {"app_name": "order-service",   "title": "訂單服務", "instances": ["10.0.1.1:9999", "10.0.1.2:9999"]},
-    {"app_name": "payment-service", "title": "金流服務", "instances": ["10.0.2.1:9999"]},
-    {"app_name": "report-service",  "title": "報表服務", "instances": ["10.0.3.1:9999"]},
+    {
+        "app_name": "order-service",
+        "title": "訂單服務",
+        "instances": ["10.0.1.1:9999", "10.0.1.2:9999"],
+    },
+    {
+        "app_name": "payment-service",
+        "title": "金流服務",
+        "instances": ["10.0.2.1:9999"],
+    },
+    {"app_name": "report-service", "title": "報表服務", "instances": ["10.0.3.1:9999"]},
 ]
 
 JOBS_DEF = [
-    {"app_name": "order-service",   "job_desc": "同步訂單狀態", "handler": "syncOrderStatusHandler",     "cron": "0 * * * * ?",    "fail_rate": 0.05, "dur": (1, 5)},
-    {"app_name": "order-service",   "job_desc": "清除過期訂單", "handler": "cleanExpiredOrdersHandler",  "cron": "0 */10 * * * ?", "fail_rate": 0.20, "dur": (2, 8)},
-    {"app_name": "order-service",   "job_desc": "訂單報表匯出", "handler": "orderReportExportHandler",   "cron": "0 0 2 * * ?",    "fail_rate": 0.10, "dur": (30, 90)},
-    {"app_name": "payment-service", "job_desc": "對帳金流記錄", "handler": "reconcilePaymentsHandler",   "cron": "0 */5 * * * ?",  "fail_rate": 0.15, "dur": (3, 12)},
-    {"app_name": "payment-service", "job_desc": "扣款訂閱費",   "handler": "chargeSubscriptionsHandler", "cron": "0 0 * * * ?",    "fail_rate": 0.05, "dur": (5, 20)},
-    {"app_name": "report-service",  "job_desc": "產生日報表",   "handler": "generateDailyReportHandler", "cron": "0 0 1 * * ?",    "fail_rate": 0.10, "dur": (60, 300)},
-    {"app_name": "report-service",  "job_desc": "發送郵件摘要", "handler": "sendEmailDigestHandler",     "cron": "0 0 8 * * ?",    "fail_rate": 0.08, "dur": (2, 10)},
+    {
+        "app_name": "order-service",
+        "job_desc": "同步訂單狀態",
+        "handler": "syncOrderStatusHandler",
+        "cron": "0 * * * * ?",
+        "fail_rate": 0.05,
+        "dur": (1, 5),
+    },
+    {
+        "app_name": "order-service",
+        "job_desc": "清除過期訂單",
+        "handler": "cleanExpiredOrdersHandler",
+        "cron": "0 */10 * * * ?",
+        "fail_rate": 0.20,
+        "dur": (2, 8),
+    },
+    {
+        "app_name": "order-service",
+        "job_desc": "訂單報表匯出",
+        "handler": "orderReportExportHandler",
+        "cron": "0 0 2 * * ?",
+        "fail_rate": 0.10,
+        "dur": (30, 90),
+    },
+    {
+        "app_name": "payment-service",
+        "job_desc": "對帳金流記錄",
+        "handler": "reconcilePaymentsHandler",
+        "cron": "0 */5 * * * ?",
+        "fail_rate": 0.15,
+        "dur": (3, 12),
+    },
+    {
+        "app_name": "payment-service",
+        "job_desc": "扣款訂閱費",
+        "handler": "chargeSubscriptionsHandler",
+        "cron": "0 0 * * * ?",
+        "fail_rate": 0.05,
+        "dur": (5, 20),
+    },
+    {
+        "app_name": "report-service",
+        "job_desc": "產生日報表",
+        "handler": "generateDailyReportHandler",
+        "cron": "0 0 1 * * ?",
+        "fail_rate": 0.10,
+        "dur": (60, 300),
+    },
+    {
+        "app_name": "report-service",
+        "job_desc": "發送郵件摘要",
+        "handler": "sendEmailDigestHandler",
+        "cron": "0 0 8 * * ?",
+        "fail_rate": 0.08,
+        "dur": (2, 10),
+    },
 ]
 
 
@@ -54,7 +111,9 @@ def connect_with_retry():
 def setup(conn):
     with conn.cursor() as cur:
         for ex in EXECUTORS:
-            cur.execute("SELECT id FROM xxl_job_group WHERE app_name=%s", (ex["app_name"],))
+            cur.execute(
+                "SELECT id FROM xxl_job_group WHERE app_name=%s", (ex["app_name"],)
+            )
             if not cur.fetchone():
                 cur.execute(
                     "INSERT INTO xxl_job_group (app_name, title, address_type, update_time) VALUES (%s,%s,0,NOW())",
@@ -102,7 +161,10 @@ def update_heartbeats(conn, groups):
                 )
                 row = cur.fetchone()
                 if row:
-                    cur.execute("UPDATE xxl_job_registry SET update_time=NOW() WHERE id=%s", (row["id"],))
+                    cur.execute(
+                        "UPDATE xxl_job_registry SET update_time=NOW() WHERE id=%s",
+                        (row["id"],),
+                    )
                 else:
                     cur.execute(
                         "INSERT INTO xxl_job_registry (registry_group,registry_key,registry_value,update_time) "
@@ -113,8 +175,12 @@ def update_heartbeats(conn, groups):
 
 def insert_log(conn, groups, jobs, offset_seconds=None):
     row = random.choice(jobs)
-    jd = next((j for j in JOBS_DEF if j["handler"] == row["executor_handler"]), JOBS_DEF[0])
-    app_name = next((k for k, v in groups.items() if v == row["job_group"]), "order-service")
+    jd = next(
+        (j for j in JOBS_DEF if j["handler"] == row["executor_handler"]), JOBS_DEF[0]
+    )
+    app_name = next(
+        (k for k, v in groups.items() if v == row["job_group"]), "order-service"
+    )
     ex = next((e for e in EXECUTORS if e["app_name"] == app_name), EXECUTORS[0])
     addr = random.choice(ex["instances"])
 
@@ -128,9 +194,13 @@ def insert_log(conn, groups, jobs, offset_seconds=None):
         dur = random.randint(1, 8)
         trigger_code, handle_code = 200, 500
         handle_time = trigger_time + timedelta(seconds=dur)
-        handle_msg = "job failed: " + random.choice([
-            "connection timeout", "NullPointerException at line 42", "DB error: too many connections"
-        ])
+        handle_msg = "job failed: " + random.choice(
+            [
+                "connection timeout",
+                "NullPointerException at line 42",
+                "DB error: too many connections",
+            ]
+        )
         status = "fail"
     else:
         dur = random.randint(*jd["dur"])
@@ -146,19 +216,30 @@ def insert_log(conn, groups, jobs, offset_seconds=None):
                 trigger_time, trigger_code, trigger_msg,
                 handle_time, handle_code, handle_msg, alarm_status)
                VALUES (%s,%s,%s,%s,%s,%s,'trigger success',%s,%s,%s,0)""",
-            (row["job_group"], row["id"], addr, row["executor_handler"],
-             trigger_time, trigger_code, handle_time, handle_code, handle_msg),
+            (
+                row["job_group"],
+                row["id"],
+                addr,
+                row["executor_handler"],
+                trigger_time,
+                trigger_code,
+                handle_time,
+                handle_code,
+                handle_msg,
+            ),
         )
     if offset_seconds is None:
-        log.info("log: %-8s  job_id=%-3d  %s", status, row["id"], row["executor_handler"])
+        log.info(
+            "log: %-8s  job_id=%-3d  %s", status, row["id"], row["executor_handler"]
+        )
 
 
 def seed_history(conn, groups, jobs):
     log.info("seeding historical data (200 entries across last 24h)...")
     offsets = (
-        [random.randint(30, 290) for _ in range(20)]       # last 5 min
-        + [random.randint(300, 3590) for _ in range(60)]   # last hour
-        + [random.randint(3600, 86390) for _ in range(120)] # last 24h
+        [random.randint(30, 290) for _ in range(20)]  # last 5 min
+        + [random.randint(300, 3590) for _ in range(60)]  # last hour
+        + [random.randint(3600, 86390) for _ in range(120)]  # last 24h
     )
     for offset in offsets:
         insert_log(conn, groups, jobs, offset_seconds=offset)
