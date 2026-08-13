@@ -25,6 +25,9 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+import pymysql
+import pymysql.cursors
 from prometheus_client import CONTENT_TYPE_LATEST
 from prometheus_client.core import (
     CollectorRegistry,
@@ -33,8 +36,6 @@ from prometheus_client.core import (
     InfoMetricFamily,
 )
 from prometheus_client.exposition import generate_latest
-import pymysql
-import pymysql.cursors
 
 VERSION = "1.0.11"
 
@@ -103,7 +104,9 @@ class Config:
         self.lookback_seconds = _parse_duration(_env("EXPORTER_LOOKBACK", "7d"))
 
         # Executor heartbeat timeout. xxl-job's RegistryConfig.DEAD_TIMEOUT = 90s.
-        self.heartbeat_timeout = _parse_duration(_env("EXPORTER_HEARTBEAT_TIMEOUT", "90s"))
+        self.heartbeat_timeout = _parse_duration(
+            _env("EXPORTER_HEARTBEAT_TIMEOUT", "90s")
+        )
 
         # Cache TTL: 0 = query DB on every scrape; >0 = serve cached metrics
         # for that many seconds (protects the DB when several Prometheus
@@ -134,6 +137,7 @@ COND_FAIL = "(trigger_code NOT IN (0, 200) OR handle_code NOT IN (0, 200))"
 # --------------------------------------------------------------------------- #
 # Collector
 # --------------------------------------------------------------------------- #
+
 
 class XxlJobCollector:
     """Custom collector: queries the xxl-job DB at scrape time (with optional TTL cache)."""
@@ -216,7 +220,11 @@ class XxlJobCollector:
     def collect(self):
         with self._lock:  # single-flight: never run concurrent DB scrapes
             now = time.monotonic()
-            if self.cfg.cache_ttl > 0 and self._cache and (now - self._cache_time) < self.cfg.cache_ttl:
+            if (
+                self.cfg.cache_ttl > 0
+                and self._cache
+                and (now - self._cache_time) < self.cfg.cache_ttl
+            ):
                 yield from self._cache
                 return
             metrics = self._collect_now()
@@ -292,9 +300,12 @@ class XxlJobCollector:
                 },
             )
             if g["address_type"] == 1:
-                addresses = [a for a in (g.get("address_list") or "").split(",") if a.strip()]
+                addresses = [
+                    a for a in (g.get("address_list") or "").split(",") if a.strip()
+                ]
                 manual_address_count.add_metric(
-                    [self._clean(g["app_name"]), self._clean(g["title"])], len(addresses)
+                    [self._clean(g["app_name"]), self._clean(g["title"])],
+                    len(addresses),
                 )
         out.extend([group_info, manual_address_count])
 
@@ -332,7 +343,9 @@ class XxlJobCollector:
             if age <= cfg.heartbeat_timeout:
                 per_app_online[app] = per_app_online.get(app, 0) + 1
             if cfg.per_instance_heartbeat:
-                heartbeat_age.add_metric([app, self._clean(row["registry_value"])], float(age))
+                heartbeat_age.add_metric(
+                    [app, self._clean(row["registry_value"])], float(age)
+                )
 
         # Ensure every auto-registered group appears (0 when nothing is online),
         # so absence-of-executor alerts work without absent().
@@ -441,12 +454,22 @@ class XxlJobCollector:
                     lv, _app = meta
                 else:  # job deleted but logs remain
                     lv = self._job_label_values(
-                        {"id": row["job_id"], "job_desc": "(deleted)", "executor_handler": ""},
+                        {
+                            "id": row["job_id"],
+                            "job_desc": "(deleted)",
+                            "executor_handler": "",
+                        },
                         app_of(row["job_group"]),
                     )
-                executions.add_metric(lv + ["success", window_name], float(row["suc"] or 0))
-                executions.add_metric(lv + ["fail", window_name], float(row["fail"] or 0))
-                executions.add_metric(lv + ["running", window_name], float(row["running"] or 0))
+                executions.add_metric(
+                    lv + ["success", window_name], float(row["suc"] or 0)
+                )
+                executions.add_metric(
+                    lv + ["fail", window_name], float(row["fail"] or 0)
+                )
+                executions.add_metric(
+                    lv + ["running", window_name], float(row["running"] or 0)
+                )
                 if row["dur_avg"] is not None:
                     duration_avg.add_metric(lv + [window_name], float(row["dur_avg"]))
                 if row["dur_max"] is not None:
@@ -487,7 +510,11 @@ class XxlJobCollector:
                     lv, _app = meta
                 else:
                     lv = self._job_label_values(
-                        {"id": row["job_id"], "job_desc": "(deleted)", "executor_handler": ""},
+                        {
+                            "id": row["job_id"],
+                            "job_desc": "(deleted)",
+                            "executor_handler": "",
+                        },
                         app_of(row["job_group"]),
                     )
                 metric.add_metric(lv, scrape_ts - float(row["age_seconds"]))
@@ -524,7 +551,11 @@ class XxlJobCollector:
                 lv, _app = meta
             else:
                 lv = self._job_label_values(
-                    {"id": row["job_id"], "job_desc": "(deleted)", "executor_handler": ""},
+                    {
+                        "id": row["job_id"],
+                        "job_desc": "(deleted)",
+                        "executor_handler": "",
+                    },
                     app_of(row["job_group"]),
                 )
             running_now.add_metric(lv, float(row["running_count"] or 0))
@@ -591,26 +622,28 @@ class XxlJobCollector:
 # --------------------------------------------------------------------------- #
 
 LANDING_PAGE = (
-    "<html><head><title>XXL-JOB Exporter</title></head><body>"
-    "<h1>XXL-JOB Prometheus Exporter</h1>"
-    "<p><a href='/metrics'>/metrics</a> &mdash; Prometheus metrics</p>"
-    "<p><a href='/healthz'>/healthz</a> &mdash; liveness probe</p>"
-    "<p><a href='/readyz'>/readyz</a> &mdash; readiness probe (checks DB connectivity)</p>"
-    "</body></html>"
-).encode("utf-8")
+    b"<html><head><title>XXL-JOB Exporter</title></head><body>"
+    b"<h1>XXL-JOB Prometheus Exporter</h1>"
+    b"<p><a href='/metrics'>/metrics</a> &mdash; Prometheus metrics</p>"
+    b"<p><a href='/healthz'>/healthz</a> &mdash; liveness probe</p>"
+    b"<p><a href='/readyz'>/readyz</a> &mdash; readiness probe (checks DB connectivity)</p>"
+    b"</body></html>"
+)
 
 
 def make_handler(registry: CollectorRegistry, collector: XxlJobCollector):
     class Handler(BaseHTTPRequestHandler):
         server_version = f"xxl-job-exporter/{VERSION}"
 
-        def do_GET(self):  # noqa: N802
+        def do_GET(self):
             path = self.path.split("?", 1)[0]
             if path == "/metrics":
                 try:
                     output = generate_latest(registry)
                 except Exception:
-                    logging.getLogger("xxl-job-exporter").exception("metrics generation failed")
+                    logging.getLogger("xxl-job-exporter").exception(
+                        "metrics generation failed"
+                    )
                     self._respond(500, b"internal error", "text/plain")
                     return
                 self._respond(200, output, CONTENT_TYPE_LATEST)
@@ -664,10 +697,17 @@ def main() -> int:
 
     log.info(
         "xxl-job-exporter %s listening on %s:%d (db=%s@%s:%d/%s, db_timezone=%s, windows=%s, lookback=%ss, cache_ttl=%ss)",
-        VERSION, cfg.listen_address, cfg.listen_port,
-        cfg.db_user, cfg.db_host, cfg.db_port, cfg.db_name,
-        cfg.db_timezone or "(server default)", 
-        ",".join(w for w, _ in cfg.windows), cfg.lookback_seconds, cfg.cache_ttl
+        VERSION,
+        cfg.listen_address,
+        cfg.listen_port,
+        cfg.db_user,
+        cfg.db_host,
+        cfg.db_port,
+        cfg.db_name,
+        cfg.db_timezone or "(server default)",
+        ",".join(w for w, _ in cfg.windows),
+        cfg.lookback_seconds,
+        cfg.cache_ttl,
     )
     server.serve_forever()
     return 0
