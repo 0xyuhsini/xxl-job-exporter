@@ -83,6 +83,7 @@ class Config:
 
         self.db_connect_timeout = int(_env("XXL_JOB_DB_CONNECT_TIMEOUT", "5"))
         self.db_read_timeout = int(_env("XXL_JOB_DB_READ_TIMEOUT", "10"))
+        self.db_timezone = _env("XXL_JOB_DB_TIMEZONE", "").strip()
 
         # --- Exporter behaviour ---
         self.listen_address = _env("EXPORTER_LISTEN_ADDRESS", "0.0.0.0")
@@ -150,7 +151,7 @@ class XxlJobCollector:
     # -- DB helpers --------------------------------------------------------- #
 
     def _connect(self):
-        return pymysql.connect(
+        kwargs = dict(
             host=self.cfg.db_host,
             port=self.cfg.db_port,
             user=self.cfg.db_user,
@@ -162,6 +163,9 @@ class XxlJobCollector:
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=True,
         )
+        if self.cfg.db_timezone:
+            kwargs["init_command"] = f"SET time_zone = '{self.cfg.db_timezone}'"
+        return pymysql.connect(**kwargs)
 
     @staticmethod
     def _query(conn, sql: str, params=None) -> list:
@@ -659,10 +663,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, shutdown)
 
     log.info(
-        "xxl-job-exporter %s listening on %s:%d (db=%s@%s:%d/%s, windows=%s, lookback=%ss, cache_ttl=%ss)",
+        "xxl-job-exporter %s listening on %s:%d (db=%s@%s:%d/%s, db_timezone=%s, windows=%s, lookback=%ss, cache_ttl=%ss)",
         VERSION, cfg.listen_address, cfg.listen_port,
         cfg.db_user, cfg.db_host, cfg.db_port, cfg.db_name,
-        ",".join(w for w, _ in cfg.windows), cfg.lookback_seconds, cfg.cache_ttl,
+        cfg.db_timezone or "(server default)", 
+        ",".join(w for w, _ in cfg.windows), cfg.lookback_seconds, cfg.cache_ttl
     )
     server.serve_forever()
     return 0
